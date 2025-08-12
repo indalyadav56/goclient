@@ -602,3 +602,85 @@ func (h *client) resolveURL(endpoint string) (string, error) {
 	}
 	return resolvedURL, nil
 }
+
+// Package-level default client for convenience functions
+var defaultClient = New()
+
+// Package-level convenience functions for direct usage
+
+// Get performs a GET request using the default client
+func Get(endpoint string) RequestBuilder {
+	return defaultClient.Get(endpoint)
+}
+
+// GetWithContext performs a GET request with context using the default client
+func GetWithContext(ctx context.Context, endpoint string) RequestBuilder {
+	return defaultClient.GetWithContext(ctx, endpoint)
+}
+
+// Post performs a POST request using the default client
+func Post(endpoint string) RequestBuilder {
+	return defaultClient.Post(endpoint)
+}
+
+// PostWithContext performs a POST request with context using the default client
+func PostWithContext(ctx context.Context, endpoint string) RequestBuilder {
+	return defaultClient.PostWithContext(ctx, endpoint)
+}
+
+// Put performs a PUT request using the default client
+func Put(endpoint string) RequestBuilder {
+	return defaultClient.Put(endpoint)
+}
+
+// PutWithContext performs a PUT request with context using the default client
+func PutWithContext(ctx context.Context, endpoint string) RequestBuilder {
+	return defaultClient.PutWithContext(ctx, endpoint)
+}
+
+// Patch performs a PATCH request using the default client
+func Patch(endpoint string) RequestBuilder {
+	return defaultClient.Patch(endpoint)
+}
+
+// PatchWithContext performs a PATCH request with context using the default client
+func PatchWithContext(ctx context.Context, endpoint string) RequestBuilder {
+	return defaultClient.PatchWithContext(ctx, endpoint)
+}
+
+// Delete performs a DELETE request using the default client
+func Delete(endpoint string) RequestBuilder {
+	return defaultClient.Delete(endpoint)
+}
+
+// DeleteWithContext performs a DELETE request with context using the default client
+func DeleteWithContext(ctx context.Context, endpoint string) RequestBuilder {
+	return defaultClient.DeleteWithContext(ctx, endpoint)
+}
+
+// SetBearerToken sets the bearer token for the default client
+func SetBearerToken(token string) Client {
+	defaultClient = defaultClient.SetBearerToken(token)
+	return defaultClient
+}
+
+// WithBasicAuth sets basic auth credentials for the default client
+func WithBasicAuth(username, password string) Client {
+	defaultClient = defaultClient.WithBasicAuth(username, password)
+	return defaultClient
+}
+
+// Batch creates a new batch request using the default client
+func Batch() BatchRequest {
+	return defaultClient.Batch()
+}
+
+// Pool creates a new request pool using the default client
+func Pool(workers int) RequestPool {
+	return defaultClient.Pool(workers)
+}
+
+// SetDefaultClient allows users to configure the default client used by package-level functions
+func SetDefaultClient(config Config) {
+	defaultClient = New(config)
+}
