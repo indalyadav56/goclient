@@ -10,7 +10,6 @@ import (
 )
 
 func main() {
-	// Create a client
 	client := goclient.New(goclient.Config{
 		BaseURL: "https://jsonplaceholder.typicode.com",
 		Timeout: 30 * time.Second,

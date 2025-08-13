@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
+	"time"
 )
 
 type Client interface {
@@ -29,6 +33,66 @@ type Client interface {
 
 	Batch() BatchRequest
 	Pool(workers int) RequestPool
+
+	// Debugging and logging
+	EnableDebug() Client
+	DisableDebug() Client
+	SetLogger(logger Logger) Client
+}
+
+// Logger interface for request/response logging
+type Logger interface {
+	Log(level LogLevel, message string, fields map[string]interface{})
+}
+
+// LogLevel represents different log levels
+type LogLevel int
+
+const (
+	LogLevelDebug LogLevel = iota
+	LogLevelInfo
+	LogLevelWarn
+	LogLevelError
+)
+
+func (l LogLevel) String() string {
+	switch l {
+	case LogLevelDebug:
+		return "DEBUG"
+	case LogLevelInfo:
+		return "INFO"
+	case LogLevelWarn:
+		return "WARN"
+	case LogLevelError:
+		return "ERROR"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+// DefaultLogger is a simple logger implementation
+type DefaultLogger struct {
+	logger *log.Logger
+}
+
+func NewDefaultLogger() *DefaultLogger {
+	return &DefaultLogger{
+		logger: log.New(os.Stdout, "[GOCLIENT] ", log.LstdFlags|log.Lmicroseconds),
+	}
+}
+
+func (l *DefaultLogger) Log(level LogLevel, message string, fields map[string]interface{}) {
+	var fieldStrs []string
+	for k, v := range fields {
+		fieldStrs = append(fieldStrs, fmt.Sprintf("%s=%v", k, v))
+	}
+	
+	fieldsStr := ""
+	if len(fieldStrs) > 0 {
+		fieldsStr = " | " + strings.Join(fieldStrs, " | ")
+	}
+	
+	l.logger.Printf("[%s] %s%s", level.String(), message, fieldsStr)
 }
 
 type RequestBuilder interface {
@@ -70,6 +134,8 @@ type client struct {
 		Username string
 		Password string
 	}
+	debugEnabled  bool
+	logger        Logger
 }
 
 type request struct {
@@ -236,6 +302,24 @@ func (c *client) SetBearerToken(token string) Client {
 func (c *client) WithBasicAuth(username, password string) Client {
 	c.basicAuth.Username = username
 	c.basicAuth.Password = password
+	return c
+}
+
+func (c *client) EnableDebug() Client {
+	c.debugEnabled = true
+	if c.logger == nil {
+		c.logger = NewDefaultLogger()
+	}
+	return c
+}
+
+func (c *client) DisableDebug() Client {
+	c.debugEnabled = false
+	return c
+}
+
+func (c *client) SetLogger(logger Logger) Client {
+	c.logger = logger
 	return c
 }
 
@@ -440,6 +524,8 @@ func (r *request) execute() {
 		return
 	}
 
+	startTime := time.Now()
+
 	// Prepare URL with query parameters
 	resolvedURL, err := r.client.resolveURL(r.endpoint)
 	if err != nil {
@@ -494,6 +580,11 @@ func (r *request) execute() {
 		req.SetBasicAuth(r.client.basicAuth.Username, r.client.basicAuth.Password)
 	}
 
+	// Log request details if debug is enabled
+	if r.client.debugEnabled && r.client.logger != nil {
+		r.logRequest(req, bodyReader)
+	}
+
 	// Execute request
 	resp, err := r.client.httpClient.Do(req)
 	if err != nil {
@@ -546,6 +637,12 @@ func (r *request) execute() {
 		Body:       body,
 	}
 
+	// Log response details if debug is enabled
+	if r.client.debugEnabled && r.client.logger != nil {
+		duration := time.Since(startTime)
+		r.logResponse(resp, duration)
+	}
+
 	// Try to unmarshal success response if result type is set
 	if r.result != nil {
 		if err := json.Unmarshal(body, r.result); err != nil {
@@ -591,6 +688,84 @@ func (r *request) addHeaders(req *http.Request) {
 	}
 }
 
+func (r *request) logRequest(req *http.Request, bodyReader io.Reader) {
+	fields := map[string]interface{}{
+		"method": req.Method,
+		"url":    req.URL.String(),
+	}
+
+	// Log headers
+	if len(req.Header) > 0 {
+		headers := make(map[string]string)
+		for k, v := range req.Header {
+			if k == "Authorization" {
+				headers[k] = "[REDACTED]" // Hide sensitive auth info
+			} else {
+				headers[k] = strings.Join(v, ", ")
+			}
+		}
+		fields["headers"] = headers
+	}
+
+	// Log query parameters
+	if len(req.URL.Query()) > 0 {
+		fields["query_params"] = req.URL.Query()
+	}
+
+	// Log request body if present
+	if bodyReader != nil {
+		if bodyBytes, ok := r.body.([]byte); ok && len(bodyBytes) > 0 {
+			bodyStr := string(bodyBytes)
+			if len(bodyStr) > 1000 {
+				bodyStr = bodyStr[:1000] + "... [truncated]"
+			}
+			fields["body"] = bodyStr
+		} else if r.body != nil {
+			fields["body"] = "[non-string body]"
+		}
+	}
+
+	r.client.logger.Log(LogLevelInfo, "HTTP Request", fields)
+}
+
+func (r *request) logResponse(resp *http.Response, duration time.Duration) {
+	fields := map[string]interface{}{
+		"status_code": resp.StatusCode,
+		"status":      resp.Status,
+		"duration_ms": duration.Milliseconds(),
+	}
+
+	// Log response headers
+	if len(resp.Header) > 0 {
+		headers := make(map[string]string)
+		for k, v := range resp.Header {
+			headers[k] = strings.Join(v, ", ")
+		}
+		fields["response_headers"] = headers
+	}
+
+	// Log response body if available and not too large
+	if r.response != nil && len(r.response.Body) > 0 {
+		bodyStr := string(r.response.Body)
+		if len(bodyStr) > 1000 {
+			bodyStr = bodyStr[:1000] + "... [truncated]"
+		}
+		fields["response_body"] = bodyStr
+	}
+
+	// Log content length
+	if resp.ContentLength >= 0 {
+		fields["content_length"] = resp.ContentLength
+	}
+
+	logLevel := LogLevelInfo
+	if resp.StatusCode >= 400 {
+		logLevel = LogLevelError
+	}
+
+	r.client.logger.Log(logLevel, "HTTP Response", fields)
+}
+
 func (h *client) resolveURL(endpoint string) (string, error) {
 	if h.baseURL == "" {
 		return endpoint, nil
@@ -603,10 +778,7 @@ func (h *client) resolveURL(endpoint string) (string, error) {
 	return resolvedURL, nil
 }
 
-// Package-level default client for convenience functions
 var defaultClient = New()
-
-// Package-level convenience functions for direct usage
 
 // Get performs a GET request using the default client
 func Get(endpoint string) RequestBuilder {
@@ -683,4 +855,22 @@ func Pool(workers int) RequestPool {
 // SetDefaultClient allows users to configure the default client used by package-level functions
 func SetDefaultClient(config Config) {
 	defaultClient = New(config)
+}
+
+// EnableDebug enables debug logging for the default client
+func EnableDebug() Client {
+	defaultClient = defaultClient.EnableDebug()
+	return defaultClient
+}
+
+// DisableDebug disables debug logging for the default client
+func DisableDebug() Client {
+	defaultClient = defaultClient.DisableDebug()
+	return defaultClient
+}
+
+// SetLogger sets a custom logger for the default client
+func SetLogger(logger Logger) Client {
+	defaultClient = defaultClient.SetLogger(logger)
+	return defaultClient
 }

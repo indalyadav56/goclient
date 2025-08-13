@@ -14,35 +14,30 @@ import (
 	"github.com/google/uuid"
 )
 
-// Interceptor defines the interface for HTTP client interceptors
 type Interceptor interface {
 	RoundTrip(req *http.Request) (*http.Response, error)
 }
 
-// Logger interface defines the logging behavior
 type Logger interface {
 	Debug(msg string, fields ...interface{})
 	Info(msg string, fields ...interface{})
 	Error(msg string, fields ...interface{})
 }
 
-// LoggingInterceptor implements http.RoundTripper and provides detailed request/response logging
 type LoggingInterceptor struct {
 	Next           http.RoundTripper
 	Logger         Logger
-	LogRequestBody bool // Option to enable/disable request body logging
-	LogHeaders     bool // Option to enable/disable headers logging
-	MaxBodySize    int  // Maximum body size to log (in bytes)
+	LogRequestBody bool
+	LogHeaders     bool
+	MaxBodySize    int
 }
 
-// LoggingOptions contains configuration for the logging interceptor
 type LoggingOptions struct {
 	LogRequestBody bool
 	LogHeaders     bool
 	MaxBodySize    int
 }
 
-// NewLoggingInterceptor creates a new logging interceptor with the given options
 func NewLoggingInterceptor(next http.RoundTripper, logger Logger, opts LoggingOptions) *LoggingInterceptor {
 	if next == nil {
 		next = http.DefaultTransport

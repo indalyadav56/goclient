@@ -15,10 +15,8 @@ type CustomInterceptor struct {
 }
 
 func (c *CustomInterceptor) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Add custom logic before request
 	fmt.Printf("🚀 Custom Interceptor: Making %s request to %s\n", req.Method, req.URL.String())
 
-	// Add custom headers
 	req.Header.Set("X-Custom-Client", "GoClient-Example")
 	req.Header.Set("X-Request-Time", time.Now().Format(time.RFC3339))
 
